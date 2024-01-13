@@ -1,0 +1,9 @@
+@article{REPO264,
+    author = "Lai, Zhao-Rong and Yang, Pei-Yi and Fang, Liangda and Wu, Xiaotian",
+    journal = "IEEE Transactions on Systems, Man, and Cybernetics: Systems",
+    number = "11",
+    pages = "4349-4361",
+    title = "{Reweighted Price Relative Tracking System for Automatic Portfolio Optimization}",
+    volume = "50",
+    year = "2020"
+}
