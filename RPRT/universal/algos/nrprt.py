@@ -1,0 +1,108 @@
+# -*- coding: utf-8 -*-
+import numpy as np
+import pandas as pd
+
+from .. import tools
+from ..algo import Algo
+
+
+class NRPRT(Algo):
+
+
+    PRICE_TYPE = "raw"
+    REPLACE_MISSING = True
+
+    def __init__(self, window=5, eps=50, theta=0.8, **kwargs):
+        """
+        :param window: Lookback window.
+        :param eps:
+        :param theta:
+        """
+
+        super().__init__(min_history=1, **kwargs)
+
+        # input check
+        if window < 2:
+            raise ValueError("window parameter must be >=3")
+
+        self.window = window
+        self.eps = eps
+        self.theta = theta
+        self.day=0
+        self.phi = np.array([])
+
+    def init_step(self, X):
+        # set initial phi to x1
+        self.phi = X.iloc[1,:] / X.iloc[0,:]
+
+    def init_weights(self, columns):
+        m = len(columns)
+        return np.ones(m) / m
+
+    def calculate_formula(self, t, l, tau, history):
+        result = 0
+        div=0
+        for i in range(t - l + 1, t + 1):
+            result += np.exp(-(t + 1 - i) ** 2 * history.iloc[i,:] / (2 * tau ** 2)) / (2 * tau ** 2 )
+            div += np.exp(-(t + 1 - i) ** 2 / (2 * tau ** 2)) / (2 * tau ** 2 )
+        return result/div
+
+    def step(self, x, last_b, history):
+        # 计算预测的x
+        if self.day>5:
+            x_pred=self.calculate_formula(t=self.day-1, l=5, tau=2.8, history=history)
+        else:
+            x_pred = self.predict(history.iloc[-self.window :])
+
+        # compute the reweighted price relative
+        D_pred = np.diag(np.array(x_pred))
+        last_phi = self.phi
+        last_price_relative = history.iloc[-1, :] / history.iloc[-2, :]
+        gamma_pred = (
+            self.theta
+            * last_price_relative
+            / (self.theta * last_price_relative + last_phi)
+        )
+        phi_pred = gamma_pred + np.multiply(
+            1 - gamma_pred, np.divide(last_phi, last_price_relative)
+        )
+        self.phi = phi_pred
+
+        # Update the weights
+        b = self.update(b=last_b, phi_pred=phi_pred, D_pred=D_pred)
+        self.day += 1
+
+        return b
+
+    def predict(self, hist):
+        """Predict next price relative."""
+        return hist.mean() / hist.iloc[-1, :]
+
+    def update(self, b, phi_pred, D_pred):
+        # Calculate variables
+        phi_pred_mean = np.mean(phi_pred)
+
+        if np.linalg.norm(phi_pred - phi_pred_mean) ** 2 == 0:
+            lam = 0
+        else:
+            lam = max(
+                0.0,
+                (self.eps - np.dot(b, phi_pred))
+                / np.linalg.norm(phi_pred - phi_pred_mean) ** 2,
+            )
+
+        # update portfolio
+        if lam != 0: # avoid numerical problem (0 * inf)
+            b_ = b + lam * np.dot(D_pred, (phi_pred - phi_pred_mean))
+        else:
+            b_ = b
+
+        b_ = np.clip(b_, -1e10, 1e10) # 对数组进行数值修建
+
+        # project it onto simplex
+        return tools.simplex_proj(y=b_)
+
+
+
+if __name__ == "__main__":
+    tools.quickrun(NRPRT(window=5, eps=50, theta=0.8))
